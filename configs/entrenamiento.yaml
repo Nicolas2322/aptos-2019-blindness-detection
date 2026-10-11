@@ -1,0 +1,13 @@
+# Hiperparámetros del modelo base (Tabla 6 del informe de diseño)
+arquitectura: efficientnet_b3
+tamano: 384
+lote: 16
+acumulacion: 2          # lote efectivo de 32
+lr_extractor: 1.0e-4
+lr_cabeza: 1.0e-3
+decaimiento: 1.0e-5
+epocas_congeladas: 2
+epocas_ajuste: 25
+paciencia: 5            # parada temprana por QWK de validación
+pliegues: 5
+semilla: 42

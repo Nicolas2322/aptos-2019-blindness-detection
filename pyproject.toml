@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aptos"
+version = "0.1.0"
+description = "Clasificación de la severidad de la retinopatía diabética (APTOS 2019) con enfoque MLOps"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 130
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E731", "E702"]

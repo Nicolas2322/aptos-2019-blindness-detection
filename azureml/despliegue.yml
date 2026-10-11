@@ -1,0 +1,14 @@
+# Despliegue en línea administrado (C8). Inferencia en CPU con el modelo exportado a ONNX.
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineDeployment.schema.json
+endpoint_name: aptos-rd-endpoint
+model: azureml:aptos-efficientnet-b3@latest
+environment: azureml:aptos-inferencia@latest
+code_configuration:
+  code: ../
+  scoring_script: app/puntuacion.py
+instance_type: Standard_DS3_v2
+instance_count: 1
+scale_settings:
+  type: default
+request_settings:
+  request_timeout_ms: 5000

@@ -1,0 +1,9 @@
+data/
+cache/
+*.pt
+*.onnx
+mlruns/
+__pycache__/
+.coverage
+.pytest_cache/
+.ruff_cache/

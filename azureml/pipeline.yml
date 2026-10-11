@@ -1,0 +1,34 @@
+# Pipeline de Azure ML (P2): preparación → entrenamiento 5 pliegues → evaluación con puerta de calidad → registro.
+$schema: https://azuremlschemas.azureedge.net/latest/pipelineJob.schema.json
+type: pipeline
+display_name: aptos-entrenamiento
+experiment_name: aptos2019
+settings:
+  default_compute: azureml:gpu-t4
+inputs:
+  datos:
+    type: uri_folder
+    path: azureml:aptos2019-train@latest      # data asset versionado (P4)
+jobs:
+  entrenar:
+    type: command
+    code: ../
+    command: >-
+      pip install -e . &&
+      python -m aptos.entrenar --config configs/entrenamiento.yaml --datos ${{inputs.datos}}
+    inputs:
+      datos: ${{parent.inputs.datos}}
+    outputs:
+      artefactos:
+        type: uri_folder
+    environment: azureml:aptos-entrenamiento@latest
+  evaluar_y_registrar:
+    type: command
+    code: ../
+    command: >-
+      python scripts/puerta_calidad.py --resultados ${{inputs.artefactos}}/resultados.json
+      --qwk-minimo 0.85 --modelo aptos-efficientnet-b3
+    inputs:
+      artefactos: ${{parent.jobs.entrenar.outputs.artefactos}}
+    environment: azureml:aptos-entrenamiento@latest
+    compute: azureml:cpu-pequeno

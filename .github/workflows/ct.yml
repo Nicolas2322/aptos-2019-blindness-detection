@@ -1,0 +1,29 @@
+# Entrenamiento continuo (P6): se dispara manualmente, por calendario o por una alerta de deriva (P9).
+name: CT - Entrenamiento continuo
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 1 * *"          # primer día de cada mes
+  repository_dispatch:
+    types: [alerta-deriva]        # enviado por el monitoreo cuando el PSI supera 0,2
+jobs:
+  entrenar:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar credenciales de Azure
+        if: env.AZURE_CREDENTIALS == ''
+        run: echo "::notice::Sin credenciales de Azure configuradas; se omite el entrenamiento en la nube."
+      - uses: azure/login@v2
+        if: env.AZURE_CREDENTIALS != ''
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Lanzar el pipeline de Azure ML
+        if: env.AZURE_CREDENTIALS != ''
+        run: |
+          az extension add -n ml -y
+          az ml job create -f azureml/pipeline.yml \
+            -g ${{ vars.AZ_RESOURCE_GROUP }} -w ${{ vars.AZ_ML_WORKSPACE }} \
+            --set display_name="ct-${{ github.run_number }}-${{ github.event_name }}" --stream

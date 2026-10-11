@@ -1,0 +1,43 @@
+# Despliegue continuo (P1): publica una versión del registro en un despliegue verde,
+# la valida con pruebas de humo y latencia, y traslada el tráfico de forma gradual.
+name: CD - Despliegue del endpoint
+on:
+  workflow_dispatch:
+    inputs:
+      version_modelo:
+        description: "Versión del modelo en el registro de Azure ML"
+        required: true
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      ENDPOINT: aptos-rd-endpoint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar credenciales de Azure
+        if: env.AZURE_CREDENTIALS == ''
+        run: echo "::notice::Sin credenciales de Azure configuradas; se omite el despliegue."
+      - uses: azure/login@v2
+        if: env.AZURE_CREDENTIALS != ''
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Crear el despliegue verde con la nueva versión
+        if: env.AZURE_CREDENTIALS != ''
+        run: |
+          az extension add -n ml -y
+          az ml online-deployment create -f azureml/despliegue.yml --name verde \
+            --set model=azureml:aptos-efficientnet-b3:${{ inputs.version_modelo }} \
+            -g ${{ vars.AZ_RESOURCE_GROUP }} -w ${{ vars.AZ_ML_WORKSPACE }}
+      - name: Prueba de humo y de latencia sobre el despliegue verde
+        if: env.AZURE_CREDENTIALS != ''
+        run: |
+          az ml online-endpoint invoke -n $ENDPOINT --deployment-name verde \
+            --request-file tests/datos/solicitud_ejemplo.json \
+            -g ${{ vars.AZ_RESOURCE_GROUP }} -w ${{ vars.AZ_ML_WORKSPACE }}
+      - name: Tráfico gradual 10 % → 100 %
+        if: env.AZURE_CREDENTIALS != ''
+        run: |
+          az ml online-endpoint update -n $ENDPOINT --traffic "azul=90 verde=10" -g ${{ vars.AZ_RESOURCE_GROUP }} -w ${{ vars.AZ_ML_WORKSPACE }}
+          sleep 600   # ventana de observación del monitoreo
+          az ml online-endpoint update -n $ENDPOINT --traffic "azul=0 verde=100" -g ${{ vars.AZ_RESOURCE_GROUP }} -w ${{ vars.AZ_ML_WORKSPACE }}
