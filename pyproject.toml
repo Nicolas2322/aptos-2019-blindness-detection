@@ -20,3 +20,8 @@ line-length = 130
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E731", "E702"]
+
+[tool.coverage.run]
+# El código de entrenamiento requiere GPU y se valida en el pipeline de CT; la puerta de cobertura
+# aplica a los módulos compartidos entre entrenamiento e inferencia (criterio RNF-04 del diseño).
+omit = ["src/aptos/entrenar.py", "src/aptos/modelo.py"]
