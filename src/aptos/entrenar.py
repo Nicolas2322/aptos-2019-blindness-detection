@@ -1,7 +1,7 @@
 """Entrenamiento por validación cruzada estratificada con registro en MLflow.
 
 Uso (Kaggle o Azure ML con GPU):
-    python -m aptos.entrenar --config configs/entrenamiento.yaml --datos /kaggle/input/aptos2019-blindness-detection
+    python -m aptos.entrenar --config configs/entrenamiento.yaml --datos /kaggle/input/competitions/aptos2019-blindness-detection
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from aptos.datos import asignar_pliegues, grupos_desde_carpeta
 from aptos.preprocesamiento import (
     DESV_IMAGENET,
     MEDIA_IMAGENET,
+    ImagenInvalida,
     normalizacion_graham,
     recorte_circular,
     redimensionar_con_relleno,
@@ -63,15 +64,27 @@ class ConjuntoFondo:
 
 
 def construir_cache(df, carpeta_img: Path, carpeta_cache: Path, tamano: int) -> list[Path]:
-    """Preprocesa una sola vez cada imagen: reduce el costo de E/S y de GPU por época (reto R3)."""
-    carpeta_cache.mkdir(parents=True, exist_ok=True); rutas = []
+    """Preprocesa una sola vez cada imagen: reduce el costo de E/S y de GPU por época (reto R3).
+
+    Cuando el recorte circular no encuentra región retiniana (imágenes muy oscuras o mal encuadradas,
+    que APTOS 2019 contiene en pequeña cantidad) se conserva la imagen sin recortar en lugar de abortar:
+    perder una fila del conjunto es preferible a detener un entrenamiento de varias horas.
+    """
+    carpeta_cache.mkdir(parents=True, exist_ok=True); rutas = []; sin_recorte = []
     for cid in df.id_code:
         destino = carpeta_cache / f"{cid}.png"
         if not destino.exists():
             img = cv2.cvtColor(cv2.imread(str(carpeta_img / f"{cid}.png")), cv2.COLOR_BGR2RGB)
-            proc = normalizacion_graham(redimensionar_con_relleno(recorte_circular(img), tamano))
+            try:
+                recortada = recorte_circular(img)
+            except ImagenInvalida:
+                recortada = img; sin_recorte.append(cid)
+            proc = normalizacion_graham(redimensionar_con_relleno(recortada, tamano))
             cv2.imwrite(str(destino), cv2.cvtColor(proc, cv2.COLOR_RGB2BGR))
         rutas.append(destino)
+    if sin_recorte:
+        print(f"Aviso: {len(sin_recorte)} imágenes sin región retiniana identificable, "
+              f"procesadas sin recorte. Primeras: {sin_recorte[:5]}")
     return rutas
 
 
