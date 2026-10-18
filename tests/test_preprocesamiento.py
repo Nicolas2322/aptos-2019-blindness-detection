@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import pytest
 from conftest import fondo_sintetico
@@ -6,6 +7,7 @@ from aptos.preprocesamiento import (
     TAMANO,
     ImagenInvalida,
     estadisticas_imagen,
+    normalizacion_graham,
     preparar_imagen,
     recorte_circular,
     redimensionar_con_relleno,
@@ -57,3 +59,23 @@ def test_estadisticas_para_monitoreo(fondo):
     e = estadisticas_imagen(fondo)
     assert set(e) == {"alto", "ancho", "brillo_medio", "contraste", "fraccion_retina"}
     assert 0.3 < e["fraccion_retina"] < 0.45
+
+
+def _fraccion_oscura(procesada, umbral=60):
+    """Fracción de píxeles muy oscuros dentro del disco útil de la imagen procesada."""
+    gris = cv2.cvtColor(procesada, cv2.COLOR_RGB2GRAY)
+    disco = np.zeros(gris.shape, np.uint8)
+    cv2.circle(disco, (gris.shape[1] // 2, gris.shape[0] // 2), int(0.95 * gris.shape[0] / 2), 1, -1)
+    return float(((gris < umbral) & (disco == 1)).sum() / (disco == 1).sum())
+
+
+@pytest.mark.parametrize("w,h,radio,descripcion", [
+    (1000, 1000, 480, "círculo completo: el recorte sale cuadrado"),
+    (2416, 1736, 1150, "círculo recortado arriba y abajo: el recorte sale apaisado"),
+])
+def test_graham_no_introduce_banda_oscura_segun_el_encuadre(w, h, radio, descripcion):
+    """Regresión: la máscara circular de radio fijo metía dentro el relleno de `redimensionar_con_relleno`
+    y el realce lo convertía en una banda de alto contraste. Como el encuadre depende de la cámara y no
+    de la patología, el modelo podía leer el grado en esa banda (correlación espuria, reto R4)."""
+    procesada = normalizacion_graham(redimensionar_con_relleno(recorte_circular(fondo_sintetico(h=h, w=w, radio=radio)), 384))
+    assert _fraccion_oscura(procesada) < 0.01, descripcion

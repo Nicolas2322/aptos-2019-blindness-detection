@@ -44,14 +44,21 @@ def redimensionar_con_relleno(img: np.ndarray, tamano: int = TAMANO) -> np.ndarr
     return lienzo
 
 
-def normalizacion_graham(img: np.ndarray, sigma_relativo: float = 30 / 512) -> np.ndarray:
-    """Resta una versión suavizada de la imagen para realzar el contraste local (Graham, 2015)."""
+def normalizacion_graham(img: np.ndarray, sigma_relativo: float = 30 / 512,
+                         tolerancia: int = 7, margen: int = 6) -> np.ndarray:
+    """Resta una versión suavizada de la imagen para realzar el contraste local (Graham, 2015).
+
+    La máscara se deriva de la propia imagen y no de un círculo de radio fijo. Un círculo fijo
+    incluye el relleno negro que añade `redimensionar_con_relleno` cuando el recorte no es cuadrado,
+    y el realce lo convierte en una banda oscura de alto contraste: una característica espuria que
+    depende del encuadre de la cámara y no de la patología.
+    """
     sigma = sigma_relativo * img.shape[0]
     suavizada = cv2.GaussianBlur(img, (0, 0), sigma)
     salida = cv2.addWeighted(img, 4, suavizada, -4, 128)
-    # conserva solo el círculo de la retina para no introducir bordes artificiales
-    mascara = np.zeros(img.shape[:2], np.uint8)
-    cv2.circle(mascara, (img.shape[1] // 2, img.shape[0] // 2), int(0.95 * img.shape[0] / 2), 1, -1)
+    mascara = (cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) > tolerancia).astype(np.uint8)
+    # se erosiona para descartar el halo que el realce produce en el borde de la retina
+    mascara = cv2.erode(mascara, np.ones((margen, margen), np.uint8), iterations=1)
     return (salida * mascara[..., None] + 128 * (1 - mascara[..., None])).astype(np.uint8)
 
 
