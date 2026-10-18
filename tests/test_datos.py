@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from conftest import fondo_sintetico
 
-from aptos.datos import asignar_pliegues, dhash, grupos_duplicados
+from aptos.datos import asignar_pliegues, dhash, grupos_desde_carpeta, grupos_duplicados
 
 
 def test_pliegues_estratificados_conservan_proporciones():
@@ -29,3 +29,24 @@ def test_dhash_detecta_duplicado_reescalado_y_distingue_otra_imagen():
     c = fondo_sintetico(semilla=4); c[:, :400] = c[:, :400] // 3; c[80:300, 450:700] = 255  # otra retina, otra iluminación
     g = grupos_duplicados([dhash(a), dhash(b), dhash(c)])
     assert g[0] == g[1] and g[0] != g[2]
+
+
+def test_grupos_desde_carpeta_agrupa_los_duplicados_leidos_de_disco(tmp_path):
+    a = fondo_sintetico(semilla=3)
+    a[200:260, 300:380] = 255
+    c = fondo_sintetico(semilla=4); c[:, :400] = c[:, :400] // 3; c[80:300, 450:700] = 255
+    cv2.imwrite(str(tmp_path / "a.png"), a)
+    cv2.imwrite(str(tmp_path / "a_reescalada.png"), cv2.resize(a, (400, 300)))
+    cv2.imwrite(str(tmp_path / "c.png"), c)
+    g = grupos_desde_carpeta(["a", "a_reescalada", "c"], tmp_path)
+    assert g[0] == g[1] and g[0] != g[2]
+
+
+def test_grupos_desde_carpeta_avisa_si_falta_una_imagen(tmp_path):
+    cv2.imwrite(str(tmp_path / "a.png"), fondo_sintetico())
+    try:
+        grupos_desde_carpeta(["a", "inexistente"], tmp_path)
+    except FileNotFoundError as e:
+        assert "inexistente" in str(e)
+    else:
+        raise AssertionError("se esperaba FileNotFoundError")

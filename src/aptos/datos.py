@@ -1,6 +1,8 @@
 """Particionamiento estratificado y detección de imágenes duplicadas (fuga entre pliegues)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pandas as pd
@@ -41,3 +43,19 @@ def grupos_duplicados(hashes: list[int], distancia_max: int = 4) -> np.ndarray:
             if bin(hashes[i] ^ hashes[j]).count("1") <= distancia_max:
                 padre[raiz(i)] = raiz(j)
     return np.array([raiz(i) for i in range(len(hashes))])
+
+
+def grupos_desde_carpeta(ids, carpeta, distancia_max: int = 4, sufijo: str = ".png") -> pd.Series:
+    """Hash perceptual de cada imagen de `carpeta` y grupo de duplicados al que pertenece.
+
+    Se lee a escala reducida porque el hash es invariante al tamaño: el recorrido resulta varias veces
+    más rápido y el resultado es el mismo. Pensado para alimentar `asignar_pliegues(..., grupos=...)`.
+    """
+    carpeta, hashes = Path(carpeta), []
+    for cid in ids:
+        ruta = carpeta / f"{cid}{sufijo}"
+        img = cv2.imread(str(ruta), cv2.IMREAD_REDUCED_COLOR_4)
+        if img is None:
+            raise FileNotFoundError(f"No se pudo leer {ruta}")
+        hashes.append(dhash(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)))
+    return pd.Series(grupos_duplicados(hashes, distancia_max))

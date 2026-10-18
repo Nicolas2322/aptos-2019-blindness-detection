@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from aptos.datos import asignar_pliegues
+from aptos.datos import asignar_pliegues, grupos_desde_carpeta
 from aptos.preprocesamiento import (
     DESV_IMAGENET,
     MEDIA_IMAGENET,
@@ -126,12 +126,17 @@ def main():
     import torch
     ap = argparse.ArgumentParser(); ap.add_argument("--config", required=True); ap.add_argument("--datos", required=True)
     a = ap.parse_args(); cfg = yaml.safe_load(open(a.config)); fijar_semilla(cfg["semilla"])
-    datos = Path(a.datos); df = asignar_pliegues(pd.read_csv(datos / "train.csv"), cfg["pliegues"])
+    datos = Path(a.datos); etiquetas = pd.read_csv(datos / "train.csv")
+    # Los duplicados se agrupan antes de particionar: una imagen repetida entre entrenamiento y
+    # validación inflaría el QWK (reto RE1). Sin este paso la mitigación de datos.py no se aplica.
+    grupos = grupos_desde_carpeta(etiquetas.id_code, datos / "train_images")
+    df = asignar_pliegues(etiquetas, cfg["pliegues"], grupos=grupos)
+    print(f"Duplicados: {grupos.nunique()} grupos para {len(df)} imágenes")
     rutas = construir_cache(df, datos / "train_images", Path("cache"), cfg["tamano"])
     dispositivo = "cuda" if torch.cuda.is_available() else "cpu"
     mlflow.set_experiment("aptos2019")
     with mlflow.start_run(run_name=cfg["arquitectura"]):
-        mlflow.log_params(cfg)
+        mlflow.log_params({**cfg, "grupos_duplicados": int(grupos.nunique())})
         oof = np.zeros(len(df)); qwks = []
         for k in range(cfg["pliegues"]):
             va, pred, q = entrenar_pliegue(k, df, rutas, cfg, dispositivo); oof[va] = pred; qwks.append(q)
