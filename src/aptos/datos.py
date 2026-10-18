@@ -45,11 +45,16 @@ def grupos_duplicados(hashes: list[int], distancia_max: int = 4) -> np.ndarray:
     return np.array([raiz(i) for i in range(len(hashes))])
 
 
-def grupos_desde_carpeta(ids, carpeta, distancia_max: int = 4, sufijo: str = ".png") -> pd.Series:
-    """Hash perceptual de cada imagen de `carpeta` y grupo de duplicados al que pertenece.
+LADO_HASH = 16          # 256 bits: con 64 bits las fotografías de fondo de ojo son indistinguibles
+DISTANCIA_MAX = 4
+
+
+def hashes_desde_carpeta(ids, carpeta, sufijo: str = ".png", lado: int = LADO_HASH) -> list[int]:
+    """Hash perceptual de cada imagen de `carpeta`, en el orden de `ids`.
 
     Se lee a escala reducida porque el hash es invariante al tamaño: el recorrido resulta varias veces
-    más rápido y el resultado es el mismo. Pensado para alimentar `asignar_pliegues(..., grupos=...)`.
+    más rápido y el resultado es el mismo. Separado de la agrupación porque la lectura domina el costo
+    y permite evaluar varias tolerancias sin releer el conjunto.
     """
     carpeta, hashes = Path(carpeta), []
     for cid in ids:
@@ -57,5 +62,22 @@ def grupos_desde_carpeta(ids, carpeta, distancia_max: int = 4, sufijo: str = ".p
         img = cv2.imread(str(ruta), cv2.IMREAD_REDUCED_COLOR_4)
         if img is None:
             raise FileNotFoundError(f"No se pudo leer {ruta}")
-        hashes.append(dhash(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)))
-    return pd.Series(grupos_duplicados(hashes, distancia_max))
+        hashes.append(dhash(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), lado))
+    return hashes
+
+
+def grupos_desde_carpeta(ids, carpeta, distancia_max: int = DISTANCIA_MAX, sufijo: str = ".png",
+                         lado: int = LADO_HASH) -> pd.Series:
+    """Grupo de duplicados de cada imagen. Alimenta `asignar_pliegues(..., grupos=...)`."""
+    return pd.Series(grupos_duplicados(hashes_desde_carpeta(ids, carpeta, sufijo, lado), distancia_max))
+
+
+def agrupacion_fiable(grupos, maximo_relativo: float = 0.01, minimo_absoluto: int = 5) -> bool:
+    """¿La agrupación describe duplicados o es el hash que no discrimina?
+
+    Un grupo que abarca una fracción apreciable del conjunto no son duplicados: significa que el hash
+    no separa las imágenes. Agrupar así destruye la estratificación de los pliegues, de modo que es
+    preferible no agrupar. Devuelve False en ese caso para que quien llame pueda desactivar la mitigación.
+    """
+    grupos = pd.Series(grupos)
+    return bool(grupos.value_counts().max() <= max(minimo_absoluto, maximo_relativo * len(grupos)))

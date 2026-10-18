@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 from pathlib import Path
 
@@ -15,7 +16,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from aptos.datos import asignar_pliegues, grupos_desde_carpeta
+from aptos.datos import agrupacion_fiable, asignar_pliegues, grupos_desde_carpeta
 from aptos.preprocesamiento import (
     DESV_IMAGENET,
     MEDIA_IMAGENET,
@@ -135,6 +136,8 @@ def entrenar_pliegue(k, df, rutas, cfg, dispositivo):
 
 
 def main():
+    # MLflow 3 exige optar explícitamente por el almacén de archivos antes de importarlo.
+    os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     import mlflow
     import torch
     ap = argparse.ArgumentParser(); ap.add_argument("--config", required=True); ap.add_argument("--datos", required=True)
@@ -143,13 +146,18 @@ def main():
     # Los duplicados se agrupan antes de particionar: una imagen repetida entre entrenamiento y
     # validación inflaría el QWK (reto RE1). Sin este paso la mitigación de datos.py no se aplica.
     grupos = grupos_desde_carpeta(etiquetas.id_code, datos / "train_images")
+    if agrupacion_fiable(grupos):
+        print(f"Duplicados: {grupos.nunique()} grupos para {len(etiquetas)} imágenes")
+    else:
+        print(f"Aviso: agrupación descartada (grupo mayor de {grupos.value_counts().max()} imágenes). "
+              "Se particiona sin agrupar duplicados.")
+        grupos = None
     df = asignar_pliegues(etiquetas, cfg["pliegues"], grupos=grupos)
-    print(f"Duplicados: {grupos.nunique()} grupos para {len(df)} imágenes")
     rutas = construir_cache(df, datos / "train_images", Path("cache"), cfg["tamano"])
     dispositivo = "cuda" if torch.cuda.is_available() else "cpu"
     mlflow.set_experiment("aptos2019")
     with mlflow.start_run(run_name=cfg["arquitectura"]):
-        mlflow.log_params({**cfg, "grupos_duplicados": int(grupos.nunique())})
+        mlflow.log_params({**cfg, "grupos_duplicados": int(grupos.nunique()) if grupos is not None else 0})
         oof = np.zeros(len(df)); qwks = []
         for k in range(cfg["pliegues"]):
             va, pred, q = entrenar_pliegue(k, df, rutas, cfg, dispositivo); oof[va] = pred; qwks.append(q)
